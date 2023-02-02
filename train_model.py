@@ -268,8 +268,12 @@ if __name__ == "__main__":
     model = nn.DataParallel(model)
     model = model.to(device)
     print("Done initializing model")
-
-    early_stopper = EarlyStopper(patience = 3, min_delta=0.01)
+    
+    if num_classes == 2:
+        early_stopper = EarlyStopper(patience = 3, min_delta=0.005)
+    else:
+        early_stopper = EarlyStopper(patience = 3, min_delta=0.03)
+    
     
     optimal_hyperparameters = OPTIMAL_HYPEPARAMETERS[m_type]
     optimizer_name = optimal_hyperparameters["optimizer"]
