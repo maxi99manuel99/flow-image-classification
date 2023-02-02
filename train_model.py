@@ -83,7 +83,7 @@ def test_model_performance(model, test_data_loader, test_size, num_classes, batc
         predicted_labels = torch.zeros(test_size, dtype=torch.int)
         true_labels = torch.zeros(test_size, dtype=torch.int)
         test_loss = 0.
-        test_steps = 0
+        n_test_instances = 0
         for z, (test_X, test_Y) in enumerate(test_data_loader):
             test_X = test_X.to(device)
             test_Y = test_Y.to(device)
@@ -110,10 +110,8 @@ def test_model_performance(model, test_data_loader, test_size, num_classes, batc
                     if wrong:
                         wrong_predictions.append((true_labels[z*batch_size:z*batch_size+len(test_X)][idx].item(), predicted_labels[z*batch_size:z*batch_size+len(test_X)][idx].item()))
 
-            test_loss += loss.item()
-            test_steps += 1
-
-            del test_X, test_Y
+            test_loss += loss.item()*test_X.size(0)
+            n_test_instances += test_X.size(0)
         
         # stats that we only want at the end of training
         if return_stats:
@@ -175,7 +173,7 @@ def test_model_performance(model, test_data_loader, test_size, num_classes, batc
         macro_recall = macro_recall / n_labels
         macro_precision = macro_precision / n_labels
         macro_f1 = macro_f1 / n_labels
-        total_loss = test_loss / test_steps
+        total_loss = test_loss / n_test_instances
         total_accuracy = accuracy(predicted_labels, true_labels)
 
         return total_loss, total_accuracy, macro_recall, macro_precision, macro_f1, kappa, wrong_predictions, roc, label_prediction_dist, confusion_matrix, recall_per_label, precision_per_label, f1_per_label
@@ -346,7 +344,7 @@ if __name__ == "__main__":
         model.train() 
         train_losses = []
         running_loss = 0.
-        steps = 0
+        running_n_instances = 0
         for j, batch in enumerate(train_data_loader):
             X = batch[0].to(device)
             Y = batch[1].to(device)
@@ -358,21 +356,19 @@ if __name__ == "__main__":
             
             output = model(X)
             loss = loss_criterion(output, Y)
-            del X, Y
-            torch.cuda.empty_cache()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item()
-            steps += 1
+            running_loss += loss.item()*X.size(0)
+            running_n_instances += X.size(0)
 
             if j == len(train_data_loader)-1 or (j % batch_print_interval == 0 and j!= 0):
-                print(f"epoch {i} batch {j} current running training loss: {running_loss / steps}")
-                train_losses.append(running_loss / steps)
+                print(f"epoch {i} batch {j} current running training loss: {running_loss / running_n_instances}")
+                train_losses.append(running_loss / running_n_instances)
                 running_loss = 0.
-                steps = 0
+                running_n_instances = 0
 
         print("Testing performance on validation set")
         
@@ -391,7 +387,7 @@ if __name__ == "__main__":
         print(f"Macro F1-Score on the validation set after epoch {i} batch {j}: {macro_f1}")
         print(f"Kappa-Score on the validation set after epoch {i} batch {j}: {kappa}")
         print()
-        torch.cuda.empty_cache()
+        
         if total_loss < early_stopper.min_validation_loss:
             torch.save(model.state_dict(), "best-model.pt")
             torch.save(optimizer.state_dict(), "best-optimizer.pt")

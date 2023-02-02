@@ -92,27 +92,25 @@ def optimize_model(hyperparameter_config: dict, train_dataset: Dataset, val_data
         model.train()
         train_losses = []
         running_loss = 0.
-        steps = 0
+        running_n_instances = 0
         for j, batch in enumerate(train_data_loader):
             X = batch[0].to(device)
             Y = batch[1].to(device)
             output = model(X)
             loss = loss_criterion(output, Y)
-            del X, Y
-            torch.cuda.empty_cache()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-            running_loss += loss.item()
-            steps += 1
+            running_loss += loss.item()*X.size(0)
+            running_n_instances += X.size(0)
 
             if j == len(train_data_loader)-1 or (j % batch_print_interval == 0 and j!= 0):
-                print(f"epoch {i} batch {j} current running training loss: {running_loss / steps}")
-                train_losses.append(running_loss / steps)
+                print(f"epoch {i} batch {j} current running training loss: {running_loss / running_n_instances}")
+                train_losses.append(running_loss / running_n_instances)
                 running_loss = 0.
-                steps = 0
+                running_n_instances = 0
         
         # Evaluation on validation set
         with torch.no_grad():
@@ -120,7 +118,7 @@ def optimize_model(hyperparameter_config: dict, train_dataset: Dataset, val_data
             predicted_labels = torch.zeros(val_size)
             true_labels = torch.zeros(val_size)
             val_loss = 0.
-            val_steps = 0
+            val_n_instances = 0
             for z, (val_X, val_Y) in enumerate(val_data_loader):
                 val_X = val_X.to(device)
                 val_Y = val_Y.to(device)
@@ -132,10 +130,8 @@ def optimize_model(hyperparameter_config: dict, train_dataset: Dataset, val_data
                 predicted_labels[z*batch_size:z*batch_size+len(val_X)] = predictions
                 true_labels[z*batch_size:z*batch_size+len(val_X)] = val_Y
 
-                val_loss += loss.item()
-                val_steps += 1
-
-                del val_X, val_Y
+                val_loss += loss.item()*val_X.size(0)
+                val_n_instances += val_X.size(0)
         
             macro_recall = 0
             macro_precision = 0
@@ -157,7 +153,7 @@ def optimize_model(hyperparameter_config: dict, train_dataset: Dataset, val_data
             macro_precision = macro_precision / n_labels
             macro_f1 = macro_f1 / n_labels
             kappa = kappa_score(predicted_labels, true_labels)
-            total_loss = val_loss / val_steps
+            total_loss = val_loss / val_n_instances
 
             if save_dir_best_result and (total_loss < ray.get(global_best_loss.get_loss.remote())):
                 ray.get(global_best_loss.set_loss.remote(total_loss))
@@ -166,7 +162,6 @@ def optimize_model(hyperparameter_config: dict, train_dataset: Dataset, val_data
                 torch.save(optimizer.state_dict(), save_dir + "best-optimizer.pt")
 
             session.report({"loss": total_loss, "accuracy": total_accuracy, "precision": macro_precision, "recall": macro_recall, "macro-f1": macro_f1, "kappa": kappa, "training-losses": train_losses})
-            torch.cuda.empty_cache()
                     
 if __name__ == "__main__":
 
