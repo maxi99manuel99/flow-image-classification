@@ -58,6 +58,8 @@ class Malware14(MalwareDataset):
         while not file_queue.empty():
             file_path = file_queue.get()
             associated_class = file_path.split("/")[-2]
+            if associated_class == "Neris" or associated_class == "Virut":
+                associated_class = "NerisVirut"
             self.classes.append(associated_class)           
             img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
             img_tensor = torch.from_numpy(img) / 255.
