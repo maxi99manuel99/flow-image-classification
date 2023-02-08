@@ -113,55 +113,20 @@ def optimize_model(hyperparameter_config: dict, train_dataset: Dataset, val_data
                 running_n_instances = 0
         
         # Evaluation on validation set
-        with torch.no_grad():
-            model.eval()
-            predicted_labels = torch.zeros(val_size)
-            true_labels = torch.zeros(val_size)
-            val_loss = 0.
-            val_n_instances = 0
-            for z, (val_X, val_Y) in enumerate(val_data_loader):
-                val_X = val_X.to(device)
-                val_Y = val_Y.to(device)
-                val_output = model(val_X)
-                loss = loss_criterion(val_output, val_Y)
+        total_loss, total_accuracy, macro_recall, macro_precision, macro_f1, kappa, *_ = test_model_performance(model, val_data_loader, val_size, num_classes, batch_size, loss_criterion)
 
-                val_prediction = nn.functional.softmax(val_output, dim=1)
-                predictions = torch.argmax(val_prediction, dim=1)     
-                predicted_labels[z*batch_size:z*batch_size+len(val_X)] = predictions
-                true_labels[z*batch_size:z*batch_size+len(val_X)] = val_Y
+        if not adapted_learning_rate and total_accuracy > 0.93:
+            adapted_learning_rate = True
+            for g in optimizer.param_groups:
+                g['lr'] = g['lr'] / 10
 
-                val_loss += loss.item()*val_X.size(0)
-                val_n_instances += val_X.size(0)
-        
-            macro_recall = 0
-            macro_precision = 0
-            macro_f1 = 0 
-            all_labels = true_labels.unique()
-            n_labels = len(all_labels)
-            for label in all_labels:
-                macro_recall += recall(predicted_labels, true_labels, label)
-                macro_precision += precision(predicted_labels, true_labels, label)
-                macro_f1 += f1_score(predicted_labels, true_labels, label)
+        if save_dir_best_result and (total_loss < ray.get(global_best_loss.get_loss.remote())):
+            ray.get(global_best_loss.set_loss.remote(total_loss))
+            ray.get(global_best_config.set_config.remote(hyperparameter_config))
+            torch.save(model.state_dict(), save_dir + "best-model.pt")
+            torch.save(optimizer.state_dict(), save_dir + "best-optimizer.pt")
 
-            total_accuracy = accuracy(predicted_labels, true_labels)
-            if not adapted_learning_rate and total_accuracy > 0.93:
-                adapted_learning_rate = True
-                for g in optimizer.param_groups:
-                    g['lr'] = g['lr'] / 10
-
-            macro_recall = macro_recall / n_labels
-            macro_precision = macro_precision / n_labels
-            macro_f1 = macro_f1 / n_labels
-            kappa = kappa_score(predicted_labels, true_labels)
-            total_loss = val_loss / val_n_instances
-
-            if save_dir_best_result and (total_loss < ray.get(global_best_loss.get_loss.remote())):
-                ray.get(global_best_loss.set_loss.remote(total_loss))
-                ray.get(global_best_config.set_config.remote(hyperparameter_config))
-                torch.save(model.state_dict(), save_dir + "best-model.pt")
-                torch.save(optimizer.state_dict(), save_dir + "best-optimizer.pt")
-
-            session.report({"loss": total_loss, "accuracy": total_accuracy, "precision": macro_precision, "recall": macro_recall, "macro-f1": macro_f1, "kappa": kappa, "training-losses": train_losses})
+        session.report({"loss": total_loss, "accuracy": total_accuracy, "precision": macro_precision, "recall": macro_recall, "macro-f1": macro_f1, "kappa": kappa, "training-losses": train_losses})
                     
 if __name__ == "__main__":
 
