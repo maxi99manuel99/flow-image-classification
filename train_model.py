@@ -321,7 +321,7 @@ if __name__ == "__main__":
         optimizer.load_state_dict(torch.load(optimizer_path))
         print("Using the old optimizer to continue training")
 
-    #if we want to adjust the learning rate and not use the one that was optimal after 10 epochs
+    #if we want to adjust the learning rate 
     if learning_rate:
         for g in optimizer.param_groups:
             g['lr'] = float(learning_rate) 
